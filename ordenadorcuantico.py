@@ -435,7 +435,7 @@ if __name__ == '__main__':
         cMULTmodN(circuit, up_reg[i], down_reg, aux, int(pow(a, pow(2, i))), N, n, kmax)
 
     """ Apply inverse QFT """
-    create_inverse_QFT(circuit, up_reg, 2*n ,1, kmax)
+    create_inverse_QFT(circuit, up_reg, precision,1, kmax)
 
     """ Measure the top qubits, to get x value"""
     circuit.measure(up_reg,up_classic)
