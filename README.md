@@ -9,5 +9,6 @@ Running on Python 3.10.12.<br>
 
 # Files
 cuentaIBM.py: Enter your IBM Quantum token and execute this file before running the file that executes on a quantum computer (ordenadorcuantico.py).<br>
-ordenadorcuantico.py: File that runs the classic implementation of the Shor algorithm on an IBM quantum computer (presaved ibm_brisbane).<br>
-simulador.py: File that simulates Shor's algorithm and that offers a handful of options on how to run it.
+ordenadorcuantico.py: File that runs the classic implementation of the Shor algorithm on an IBM quantum computer (presaved ibm_brisbane) and that offers a handful of options on how to run it.<br>
+simulador.py: File that simulates Shor's algorithm and that offers a handful of options on how to run it.<br>
+comparison.py: File that runs the classic implementation of the Shor algorithm on an IBM quantum computer (presaved ibm_brisbane) and compares the amount of times the order is found and the amount of times any equivalent order is found.
