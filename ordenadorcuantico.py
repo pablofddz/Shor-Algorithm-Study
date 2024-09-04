@@ -41,7 +41,7 @@ def check_if_power(N):
 
     return False
 
-def get_factors_original(l_phi,N,a,prec):
+def get_factors_original(l_phi,N,a,prec, period):
     # construct decimal value of phi
     n = 0
     phi_tilde = 0
@@ -61,23 +61,21 @@ def get_factors_original(l_phi,N,a,prec):
 
     # construct convergents for phi
     convergents = list(contfrac.convergents(phi, prec))
+    # print("convergents of phi:", convergents)
 
     # check convergents for solution
     for conv in convergents:
         r = conv[1]
-        if r>100000:
-            break
-        test1 = r % 2 # 0 if r is even
-        x = a**int(r/2)
-        test2 = (x-1) % N # 0 if a^r/2 is a trivial root
-        test3 = (x+1) % N # 0 if a^r/2 is a trivial root
-        test4 = a**r % N # 1 if r is a solution
-        if (test1==0 and test2!=0 and test3!=0 and test4==1):
-            print(N," = ", math.gcd(x-1, N), " x ", math.gcd(x+1, N))
-            return True
-    
-    print("No se halló la factorización")
-    
+        if r==period:
+            x = pow(a,int(r/2),N)
+            if x == N-1:
+                print("not able to use this a value for factorizing this number")
+            else:
+                print("conv:", conv, "r =", r, ": factors")
+                print("factor1:", math.gcd(x-1, N))
+                print("factor2:", math.gcd(x+1, N))
+                return True
+
     return False
 
 def get_factors_new(l_phi,N,a,prec):
@@ -110,13 +108,15 @@ def get_factors_new(l_phi,N,a,prec):
             if x % N == 1:
                 r = r/2
             elif x % N == N-1:
-                print("Se ha hallado el periodo, pero con este valor de a no se puede hallar la factorización")
+                print("The order (or an equivalent one) has been found, but with this a value tha factorization can't be found")
+                #print("Se ha hallado el periodo, pero con este valor de a no se puede hallar la factorización")
                 break
             else:
                 print(N, " = ", math.gcd(x-1, N), " x ", math.gcd(x+1, N))
                 return True
 
-    print("No se halló la factorización")
+    print("no factors found")
+    #print("No se halló la factorización")
     return False
 
 def process_result(i, sim_result, number_shots, N, a, analisis):
@@ -314,18 +314,20 @@ if __name__ == '__main__':
 
     """ Ask for analysis number N """   
 
-    N = int(input('Escribe el número N natural que quieres factorizar: '))
-    
-    """ Check if N==1 or N==0"""
+    N = int(input('Write the number N to be factorized: '))
+    #N = int(input('Escribe el número N natural que quieres factorizar: '))
 
+    """ Check if N==1 or N==0"""
     if N==1 or N==0: 
-       print('Inserta un número distinto de 1 y 0')
+       print('Insert a different value from 1 and 0')
+       #print('Inserta un número distinto de 1 y 0')
        exit()
     
     """ Check if N is even """
 
     if (N%2)==0:
-        print('N es par')
+        print('N is even')
+        #print('N es par')
         exit()
     
     """ Check if N can be put in N=p^q, p>1, q>=2 """
@@ -339,54 +341,71 @@ if __name__ == '__main__':
     """ Get n value used in Shor's algorithm, to know how many qubits are used """
     n = math.ceil(math.log(N,2))
 
-    print("Predeterminado: \n\t a=2, \n\t 2n qubits de precisión, \n\t transformada cuántica de Fourier aproximada, \n\t análisis de resultados refinado y paralelo.\n")
-    personalizado = int(input('¿Quieres personalizar los ajustes del algoritmo o deseas usar los predeterminados? (0-Personalizar, 1-Predeterminados): '))
+    print("Predetermined: \n\t a=2, \n\t 2n precision qubits, \n\t approximate quantum Fourier transform, \n\t refined and parallel result analysis.\n")
+    personalizado = int(input('Adjust the parameters or continue with the predetermined ones? (0-Personalize, 1-Predetermined): '))
+    
+    #print("Predeterminado: \n\t a=2, \n\t 2n qubits de precisión, \n\t transformada cuántica de Fourier aproximada, \n\t análisis de resultados refinado y paralelo.\n")
+    #personalizado = int(input('¿Quieres personalizar los ajustes del algoritmo o deseas usar los predeterminados? (0-Personalizar, 1-Predeterminados): '))
     if personalizado != 0 and personalizado != 1:
-        print('Selecciona una opción correcta')
+        print('Select a correct option')
+        #print('Selecciona una opción correcta')
         exit()
     elif personalizado == 0:
-        a = int(input('Inserta el número a (a=2 es lo que se usó en los experimentos): '))
+        a = int(input('Insert the value of a (a=2 was used in our experiments): '))
+        #a = int(input('Inserta el número a (a=2 es lo que se usó en los experimentos): '))
         if a<1:
-            print('Selecciona un valor correcto')
+            print("Select a correct value")
+            #print('Selecciona un valor correcto')
             exit()
 
         x = math.gcd(a,N)
         if x != 1:
-            print("a tiene el factor ", x, " en común con N")
+            print("a has the factor ", x, " in common with N")
+            #print("a tiene el factor ", x, " en común con N")
             exit()
 
-        precision = int(input('¿Quieres usar 2n qubits de precisión? (0 - No, 1 - Sí) : '))
+        precision = int(input('Use 2n precision qubits? (0 - No, 1 - Yes) : '))
+        #precision = int(input('¿Quieres usar 2n qubits de precisión? (0 - No, 1 - Sí) : '))
         if precision != 0 and precision != 1:
-            print('Selecciona una opción correcta')
+            print("Select a correct option")
+            #print('Selecciona una opción correcta')
             exit()
 
         if precision == 0:
-            precision = int(input('Escriba el número de qubits de precisión que quieres utilizar: '))
+            precision = int(input('Write how many precision qubits you want to use: '))
+            #precision = int(input('Escriba el número de qubits de precisión que quieres utilizar: '))
             if precision < 1:
-                print("No es posible usar ese número de qubits de precisión")
+                print("It's not possible to use this number of precision qubits")
+                #print("No es posible usar ese número de qubits de precisión")
                 exit()
         else:
             precision = 2*n
 
         qubits = precision + 2*n + 2
 
-        approximate=int(input('¿Usar la versión aproximada de la transformada cuántica de Fourier? (0 - No, 1 - Sí): '))
+        approximate=int(input('Use the approximate version of the quantum Fourier transform? (0 - No, 1 - Yes): '))
+        #approximate=int(input('¿Usar la versión aproximada de la transformada cuántica de Fourier? (0 - No, 1 - Sí): '))
         if approximate == 1:
             kmax = math.ceil(math.log(n, 2))
         elif approximate == 0:
             kmax = 0
         else:
-            print('Selecciona una opción correcta')
+            print("Select a correct option")
+            #print('Selecciona una opción correcta')
             exit()
 
-        analisis=int(input('¿Usar la versión refinada de análisis de resultados? (0 - No, 1 - Sí): '))
+        analisis=int(input('Use the refined version of the result analysis? (0 - No, 1 - Yes): '))
+        #analisis=int(input('¿Usar la versión refinada de análisis de resultados? (0 - No, 1 - Sí): '))
         if analisis != 0 and analisis != 1:
-            print('Selecciona una opción correcta')
+            print("Select a correct option")
+            #print('Selecciona una opción correcta')
             exit()
         
-        paralelo=int(input('¿Usar análisis en paralelo de resultados? (0 - No, 1 - Sí): ')) 
+        paralelo=int(input('Use parallel result analysis? (0 - No, 1 - Yes): ')) 
+        #paralelo=int(input('¿Usar análisis en paralelo de resultados? (0 - No, 1 - Sí): ')) 
         if paralelo != 0 and paralelo != 1:
-            print('Selecciona una opción correcta')
+            print("Select a correct option")
+            #print('Selecciona una opción correcta')
             exit()
     else:
         a = 2
@@ -401,15 +420,19 @@ if __name__ == '__main__':
         elif approximate == 0:
             kmax = 0
         else:
-            print('Selecciona una opción correcta')
+            print("Select a correct option")
+            #print('Selecciona una opción correcta')
             exit()
 
         analisis=1
         
         paralelo=1
 
-    print("\nEn total se van a usar", qubits, "qubits")
-    print("\n¡Tener en cuenta que si el número de qubits es mayor que 25 es muy posible que el ordenador cuántico devuelva un error!\n")
+    print("\nIn total ", qubits, " qubits will be used")
+    print("\nIf the number of qubits is over 25 it is very likely for the quantum computer to return an error!\n")
+
+    #print("\nEn total se van a usar", qubits, "qubits")
+    #print("\n¡Tener en cuenta que si el número de qubits es mayor que 25 es muy posible que el ordenador cuántico devuelva un error!\n")
 
     """ Create quantum and classical registers """
     import time
@@ -441,19 +464,25 @@ if __name__ == '__main__':
     circuit.measure(up_reg,up_classic)
 
     end = time.time()
-    print("\nCircuito construido")
+    #print("\nCircuito construido")
     tiempo_circuito = end - start
-    print('Tiempo necesitado: %f segundos'%(tiempo_circuito))
+    #print('Tiempo necesitado: %f segundos'%(tiempo_circuito))
+
+    print('Circuit built. Time needed: %f segundos'%(tiempo_circuito))
+
 
     """ Select how many times the circuit runs"""
-    number_shots=int(input('Número de intentos: '))
+    number_shots=int(input('Number of attempts: '))
+    #number_shots=int(input('Número de intentos: '))
     if number_shots < 1:
-        print('Al menos una vez...')
+        print('At least one...')
+        #print('Al menos una vez...')
         exit()
 
     """ Print info to user """
     start = time.time()
-    print('Ejecutando el circuito {0} veces para N={1} y a={2}\n'.format(number_shots,N,a))
+    print('Executing the circuit {0} times for N={1} and a={2}\n'.format(number_shots,N,a))
+    #print('Ejecutando el circuito {0} veces para N={1} y a={2}\n'.format(number_shots,N,a))
 
     
     """ Simulate the created Quantum Circuit """  
@@ -463,18 +492,21 @@ if __name__ == '__main__':
     session = Session(service=service, backend="ibm_brisbane")
 
     transpiled_circuit = transpile(circuit, backend=backend)
-    print("Circuito transpilado")
+    #print("Circuito transpilado")
+    print("Circuit transpiled")
 
     result = Sampler(session=session).run([transpiled_circuit], shots=number_shots).result()
     counts_result = result[0].data.c0.get_counts()
 
     end = time.time()
-    print("Ejecución completada")
+    #print("Ejecución completada")
     tiempo_ejecucion = end-start
-    print('Tiempo necesitado: %f segundos'%(tiempo_ejecucion))
+    #print('Tiempo necesitado: %f segundos'%(tiempo_ejecucion))
+    print('Execution completed. Time needed: %f segundos'%(tiempo_ejecucion))
 
     while i < len(counts_result):
-        print('El resultado \"{0}({1})\" ocurrió {2} veces de {3}'.format(list(counts_result.keys())[i], int(list(counts_result.keys())[i], 2), list(counts_result.values())[i],number_shots))
+        print('The result \"{0}({1})\" occured {2} times on a total of {3}'.format(list(counts_result.keys())[i], int(list(counts_result.keys())[i], 2), list(counts_result.values())[i],number_shots))
+        #print('El resultado \"{0}({1})\" ocurrió {2} veces de {3}'.format(list(counts_result.keys())[i], int(list(counts_result.keys())[i], 2), list(counts_result.values())[i],number_shots))
         i=i+1
 
     """ An empty print just to have a good display in terminal """
@@ -502,9 +534,14 @@ if __name__ == '__main__':
 
 
     end = time.time()
-    print('Tiempo necesitado para el análisis de resultados %f'%(end - start))
+    print('Result analysis completed. Time needed: %f\n\n\n'%(end - start))
 
-    print("\nUsando a={0}, se han encontrado los factores de N={1} en un {2:.4f} % de los casos\n".format(a,N,prob_success))
-    print("Tiempo de construcción del circuito: %f segundos"%(tiempo_circuito))
-    print("Tiempo de ejecución del circuito: %f segundos"%(tiempo_ejecucion))
-    print("Tiempo de análisis de resultados: %f segundos"%(end-start))
+    print("Time needed for circuit construction: %f seconds"%(tiempo_circuito))
+    print("Time needed for circuit execution: %f seconds"%(tiempo_ejecucion))
+    print("Time needed for result analysis: %f seconds"%(end-start))
+    print("\nUsing a={0}, found the factors of N={1} in {2:.4f} % of the cases \n".format(a,N,prob_success))
+    #print('Tiempo necesitado para el análisis de resultados %f'%(end - start))
+    #print("Tiempo de construcción del circuito: %f segundos"%(tiempo_circuito))
+    #print("Tiempo de ejecución del circuito: %f segundos"%(tiempo_ejecucion))
+    #print("Tiempo de análisis de resultados: %f segundos"%(end-start))
+    #print("\nUsing a={0}, found the factors of N={1} in {2:.4f} % of the cases\n".format(a,N,prob_success))

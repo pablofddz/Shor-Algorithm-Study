@@ -1,16 +1,18 @@
-from concurrent.futures import ProcessPoolExecutor
-import os
-os.environ['CUDA_VISIBLE_DEVICES'] = '0'
+
 
 """ Imports from qiskit"""
+from concurrent.futures import ProcessPoolExecutor
 from qiskit import QuantumCircuit, ClassicalRegister, QuantumRegister, transpile
-from qiskit_aer import QasmSimulator
+from qiskit_ibm_provider import IBMProvider # type: ignore
+
+
+from qiskit_ibm_runtime import QiskitRuntimeService, Session
+from qiskit_ibm_runtime import SamplerV2 as Sampler
 
 """ Imports to Python functions """
 import math
 import numpy as np
 import contfrac
-import time
 
 """ Function to check if N is of type q^p"""
 def check_if_power(N):
@@ -28,7 +30,7 @@ def check_if_power(N):
                 p = int(N+1)
 
             if int(p) == int(N):
-                print('N es {0}^{1}'.format(int(m),int(b)) )
+                print('N is {0}^{1}'.format(int(m),int(b)) )
                 return True
 
             if p<N:
@@ -39,7 +41,7 @@ def check_if_power(N):
 
     return False
 
-def get_factors_original(l_phi,N,a,prec, period):
+def get_factors_not_equiv(l_phi,N,a,prec, period):
     # construct decimal value of phi
     n = 0
     phi_tilde = 0
@@ -76,7 +78,7 @@ def get_factors_original(l_phi,N,a,prec, period):
 
     return False
 
-def get_factors_new(l_phi,N,a,prec):
+def get_factors_equiv(l_phi,N,a,prec):
     # construct decimal value of phi
     n = 0
     phi_tilde = 0
@@ -96,25 +98,48 @@ def get_factors_new(l_phi,N,a,prec):
 
     # construct convergents for phi
     convergents = list(contfrac.convergents(phi, prec))
+    # print("convergents of phi:", convergents)
 
     # check convergents for solution
     for conv in convergents:
         r = conv[1]
         if r>100000:
             break
-        while r % 2 == 0 and a**r % N == 1:
-            x = a**int(r/2)
-            if x % N == 1:
-                r = r/2
-            elif x % N == N-1:
-                print("An equivalent order has been found, but with this a value the factorization can't be found")
+        while r % 2 == 0 and pow(a,r,N) == 1:
+            x = pow(a,int(r/2),N)
+            if x == 1:
+                r = int(r/2)
+            elif x == N-1:
+                print("not able to use this a value for factorizing this number")
                 break
             else:
-                print(N, " = ", math.gcd(x-1, N), " x ", math.gcd(x+1, N))
+                print("conv:", conv, "r =", r, ": factors")
+                print("factor1:", math.gcd(x-1, N))
+                print("factor2:", math.gcd(x+1, N))
                 return True
-
-    print("Factorization wasn't found")
+    
+    # print("no factors found")
     return False
+
+def find_period(a,n):
+    k = 1
+    while (a ** k) % n != 1:
+        k += 1
+    return k
+
+def process_result(i, sim_result, number_shots, N, a):
+    """Process a single result from simulation."""
+    output_desired = list(sim_result.keys())[i]
+    
+    prob_this_result = 100 * (int(list(sim_result.values())[i])) / number_shots
+
+    # compute period clasically
+    period = find_period(a,N)
+
+    success_not_equiv = get_factors_not_equiv(output_desired, int(N), int(a), 10000, period)
+    success_equiv = get_factors_equiv(output_desired, int(N), int(a), 10000)
+
+    return success_not_equiv, success_equiv, prob_this_result
 
 """Functions that calculate the modular inverse using Euclid's algorithm"""
 def egcd(a, b):
@@ -123,7 +148,6 @@ def egcd(a, b):
     else:
         g, y, x = egcd(b % a, a)
         return (g, x - (b // a) * y, y)
-    
 def modinv(a, m):
     g, x, y = egcd(a, m)
     if g != 1:
@@ -295,32 +319,6 @@ def cMULTmodN(circuit, ctl, q, aux, a, N, n, kmax):
         i -= 1
     create_inverse_QFT(circuit, aux, n+1, 0, kmax)
 
-def show_good_coef(results, n):
-    i=0
-    max = pow(2,n)
-    """ Iterate to all possible states """
-    while i<max:
-        binary = bin(i)[2:].zfill(n)
-        number = results.item(i)
-        number = round(number.real, 3) + round(number.imag, 3) * 1j
-        """ Print the respective component of the state if it has a non-zero coeficient """
-        if number!=0:
-            print('|{}>'.format(binary),number)
-        i=i+1
-
-def process_result(i, sim_result, number_shots, N, a, analisis):
-    """Process a single result from simulation."""
-    output_desired = list(sim_result.keys())[i]
-    #output_desired = all_registers_output.split(" ")[1]
-    
-    prob_this_result = 100 * (int(list(sim_result.values())[i])) / number_shots
-
-    if analisis == 0:
-        success = get_factors_original(output_desired, int(N), int(a), 10000)
-    else:
-        success = get_factors_new(output_desired, int(N), int(a), 10000)
-    return success, prob_this_result
-
 """ Main program """
 if __name__ == '__main__':
 
@@ -328,8 +326,9 @@ if __name__ == '__main__':
 
     N = int(input('Write the number N to be factorized: '))
     #N = int(input('Escribe el número N natural que quieres factorizar: '))
-
+    
     """ Check if N==1 or N==0"""
+
     if N==1 or N==0: 
        print('Insert a different value from 1 and 0')
        #print('Inserta un número distinto de 1 y 0')
@@ -348,185 +347,64 @@ if __name__ == '__main__':
     if check_if_power(N)==True:
        exit()
 
-    print('Es necesario usar el algoritmo de Shor\n')
-
-    gpu = int(input('Do yoy want to use CPU or GPU execution? (0 - CPU, 1 - GPU) : '))
-    if gpu != 0 and gpu != 1:
-        print('Select a correct option')
-        #print('Selecciona una opción correcta')
-        exit()
+    print('The use of Shor algorithm is needed')
+    #print('Es necesario usar el algoritmo de Shor\n')
 
     """ Get n value used in Shor's algorithm, to know how many qubits are used """
     n = math.ceil(math.log(N,2))
 
-    print("Predetermined: \n\t a=2, \n\t 2n precision qubits, \n\t approximate quantum Fourier transform, \n\t refined and parallel result analysis.\n")
-    personalizado = int(input('Adjust the parameters or continue with the predetermined ones? (0-Personalize, 1-Predetermined): '))
-    
-    #print("Predeterminado: \n\t a=2, \n\t 2n qubits de precisión, \n\t transformada cuántica de Fourier aproximada, \n\t análisis de resultados refinado y paralelo.\n")
-    #personalizado = int(input('¿Quieres personalizar los ajustes del algoritmo o deseas usar los predeterminados? (0-Personalizar, 1-Predeterminados): '))
-    if personalizado != 0 and personalizado != 1:
-        print('Select a correct option')
-        #print('Selecciona una opción correcta')
+    precision = int(input('Write the number of precision qubits you want to use (2n would be ' + str(2*n) + '): '))
+    #precision = int(input('Escriba el número de qubits de precisión que quieres utilizar (2n sería ' + str(2*n) + '): '))
+    if precision < 1:
+        print("Not possible to use this number of precision qubits")
+        #print("No es posible usar ese número de qubits de precisión")
         exit()
-    elif personalizado == 0:
-        a = int(input('Insert the value of a (a=2 was used in our experiments): '))
-        #a = int(input('Inserta el número a (a=2 es lo que se usó en los experimentos): '))
-        if a<1:
-            print("Select a correct value")
-            #print('Selecciona un valor correcto')
-            exit()
 
-        x = math.gcd(a,N)
-        if x != 1:
-            print("a has the factor ", x, " in common with N")
-            #print("a tiene el factor ", x, " en común con N")
-            exit()
+    qubits = precision + 2*n + 2
 
-        precision = int(input('Use 2n precision qubits? (0 - No, 1 - Yes) : '))
-        #precision = int(input('¿Quieres usar 2n qubits de precisión? (0 - No, 1 - Sí) : '))
-        if precision != 0 and precision != 1:
-            print("Select a correct option")
-            #print('Selecciona una opción correcta')
-            exit()
+    a = 19
 
-        if precision == 0:
-            precision = int(input('Write how many precision qubits you want to use: '))
-            #precision = int(input('Escriba el número de qubits de precisión que quieres utilizar: '))
-            if precision < 1:
-                print("It's not possible to use this number of precision qubits")
-                #print("No es posible usar ese número de qubits de precisión")
-                exit()
-        else:
-            precision = 2*n
-
-        qubits = precision + 2*n + 2
-
-        version = int(input('Do you want to use the classical circuit or the semiclassical (Beauregard) one? (0 - Classical, 1 - Semiclassical) : '))
-        #precision = int(input('¿Quieres usar 2n qubits de precisión? (0 - No, 1 - Sí) : '))
-        if version != 0 and version != 1:
-            print("Select a correct option")
-            #print('Selecciona una opción correcta')
-            exit()
-
-        approximate=int(input('Use the approximate version of the quantum Fourier transform? (0 - No, 1 - Yes): '))
-        #approximate=int(input('¿Usar la versión aproximada de la transformada cuántica de Fourier? (0 - No, 1 - Sí): '))
-        if approximate == 1:
-            kmax = math.ceil(math.log(n, 2))
-        elif approximate == 0:
-            kmax = 0
-        else:
-            print("Select a correct option")
-            #print('Selecciona una opción correcta')
-            exit()
-
-        analisis=int(input('¿Use the refined version of the result analysis? (0 - No, 1 - Yes): '))
-        #analisis=int(input('¿Usar la versión refinada de análisis de resultados? (0 - No, 1 - Sí): '))
-        if analisis != 0 and analisis != 1:
-            print("Select a correct option")
-            #print('Selecciona una opción correcta')
-            exit()
+    kmax = math.ceil(math.log(n, 2))
+    #kmax = 0
         
-        paralelo=int(input('¿Use parallel result analysis? (0 - No, 1 - Yes): ')) 
-        #paralelo=int(input('¿Usar análisis en paralelo de resultados? (0 - No, 1 - Sí): ')) 
-        if paralelo != 0 and paralelo != 1:
-            print("Select a correct option")
-            #print('Selecciona una opción correcta')
-            exit()
-    else:
-        a = 2
+    qubits = 2*n + 2 + precision
 
-        precision = 2*n
-
-        version= 1
-        
-        qubits = 2*n + 3
-        
-        if (gpu == 1 and qubits > 29) or (gpu == 0 and qubits > 35):
-            print('Not possible to use this version with these number of qubits and that execution mode')
-            #print("No es posible usar esta versión para ese número con ese número de qubits de precisión y ese modo de ejecución")
-            exit()
-
-        approximate=1
-        if approximate == 1:
-            kmax = math.ceil(math.log(n, 2))
-        elif approximate == 0:
-            kmax = 0
-        else:
-            print('Select a correct option')
-            #print('Selecciona una opción correcta')
-            exit()
-
-        analisis=1
-        
-        paralelo=1
-
-    print("\nIn total ", qubits, " qubits will be used")
-
+    print("Total qubits used: ", qubits, "qubits")
+    print("If the number of qubits is over 25 its likely that the quantum computer returns an error!")
     #print("\nEn total se van a usar", qubits, "qubits")
+    #print("\n¡Tener en cuenta que si el número de qubits es mayor que 25 es muy posible que el ordenador cuántico devuelva un error!\n")
 
-    if version == 1:
-        start = time.time()
-            
-        """ Create quantum and classical registers """
-        """auxilliary quantum register used in addition and multiplication"""
-        aux = QuantumRegister(n+2)
-        """single qubit where the sequential QFT is performed"""
-        up_reg = QuantumRegister(1)
-        """quantum register where the multiplications are made"""
-        down_reg = QuantumRegister(n)
-        """classical register where the measured values of the sequential QFT are stored"""
-        up_classic = ClassicalRegister(precision)
-        """classical bit used to reset the state of the top qubit to 0 if the previous measurement was 1"""
-        c_aux = ClassicalRegister(1)
+    """ Create quantum and classical registers """
+    import time
+    start = time.time()
+    """auxilliary quantum register used in addition and multiplication"""
+    aux = QuantumRegister(n+2)
+    """quantum register where the sequential QFT is performed"""
+    up_reg = QuantumRegister(precision)
+    """quantum register where the multiplications are made"""
+    down_reg = QuantumRegister(n)
+    """classical register where the measured values of the QFT are stored"""
+    up_classic = ClassicalRegister(precision)
 
-        """ Create Quantum Circuit """
-        circuit = QuantumCircuit(down_reg , up_reg , aux, up_classic, c_aux)
+    """ Create Quantum Circuit """
+    circuit = QuantumCircuit(down_reg , up_reg , aux, up_classic)
 
-        """ Initialize down register to 1"""
-        circuit.x(down_reg[0])
-        """ Cycle to create the Sequential QFT, measuring qubits and applying the right gates according to measurements """
-        for i in range(0, precision):
-            """reset the top qubit to 0 if the previous measurement was 1"""
-            circuit.x(up_reg).c_if(c_aux, 1)
-            circuit.h(up_reg)
-            cMULTmodN(circuit, up_reg[0], down_reg, aux, a**(2**(precision-1-i)), N, n, kmax)
-            """cycle through all possible values of the classical register and apply the corresponding conditional phase shift"""
-            for j in range(2, i+1):
-                """the phase shift is applied if the value of the classical register matches j exactly"""
-                circuit.p(-math.pi*2**(1-j), up_reg[0]).c_if(up_classic[i+1-j], 1)
-            circuit.h(up_reg)
-            circuit.measure(up_reg[0], up_classic[i])
-            circuit.measure(up_reg[0], c_aux[0])
-    elif version==0:
-        start = time.time()
+    """ Initialize down register to 1 and create maximal superposition in top register """
+    circuit.h(up_reg)
+    circuit.x(down_reg[0])
 
-        """auxilliary quantum register used in addition and multiplication"""
-        aux = QuantumRegister(n+2)
-        """quantum register where the sequential QFT is performed"""
-        up_reg = QuantumRegister(precision)
-        """quantum register where the multiplications are made"""
-        down_reg = QuantumRegister(n)
-        """classical register where the measured values of the QFT are stored"""
-        up_classic = ClassicalRegister(precision)
+    """ Apply the multiplication gates as showed in the report in order to create the exponentiation """
+    for i in range(0, precision):
+        cMULTmodN(circuit, up_reg[i], down_reg, aux, int(pow(a, pow(2, i))), N, n, kmax)
 
-        """ Create Quantum Circuit """
-        circuit = QuantumCircuit(down_reg , up_reg , aux, up_classic)
+    """ Apply inverse QFT """
+    create_inverse_QFT(circuit, up_reg, precision,1, kmax)
 
-        """ Initialize down register to 1 and create maximal superposition in top register """
-        circuit.h(up_reg)
-        circuit.x(down_reg[0])
+    """ Measure the top qubits, to get x value"""
+    circuit.measure(up_reg,up_classic)
 
-        """ Apply the multiplication gates as showed in the report in order to create the exponentiation """
-        for i in range(0, precision):
-            cMULTmodN(circuit, up_reg[i], down_reg, aux, int(pow(a, pow(2, i))), N, n, kmax)
-
-        """ Apply inverse QFT """
-        create_inverse_QFT(circuit, up_reg, precision ,1, kmax)
-
-        """ Measure the top qubits, to get x value"""
-        circuit.measure(up_reg,up_classic)
-        
     end = time.time()
+
     #print("\nCircuito construido")
     tiempo_circuito = end - start
     #print('Tiempo necesitado: %f segundos'%(tiempo_circuito))
@@ -546,29 +424,25 @@ if __name__ == '__main__':
     print('Executing the circuit {0} times for N={1} and a={2}\n'.format(number_shots,N,a))
     #print('Ejecutando el circuito {0} veces para N={1} y a={2}\n'.format(number_shots,N,a))
 
-    if gpu == 0:
-        simulator = QasmSimulator(method='statevector', device='CPU')
-    else:
-        simulator = QasmSimulator(method='statevector', device='GPU')
     
-    transpiled_circuit = transpile(circuit, simulator)
+    """ Simulate the created Quantum Circuit """  
+    service = QiskitRuntimeService(channel='ibm_quantum')
+    provider = IBMProvider()
+    backend = provider.backends(name="ibm_brisbane")[0]
+    session = Session(service=service, backend="ibm_brisbane")
+
+    transpiled_circuit = transpile(circuit, backend=backend)
     #print("Circuito transpilado")
     print("Circuit transpiled")
-    simulation = simulator.run(transpiled_circuit, shots=number_shots)
-    sim_result = simulation.result()
-    counts_prev = sim_result.get_counts()
+
+    result = Sampler(session=session).run([transpiled_circuit], shots=number_shots).result()
+    counts_result = result[0].data.c0.get_counts()
 
     end = time.time()
     #print("Ejecución completada")
     tiempo_ejecucion = end-start
     #print('Tiempo necesitado: %f segundos'%(tiempo_ejecucion))
     print('Execution completed. Time needed: %f segundos'%(tiempo_ejecucion))
-
-    i=0
-    if version == 1:
-        counts_result = {key[2:]: value for key, value in counts_prev.items()}
-    else:
-        counts_result = counts_prev
 
     while i < len(counts_result):
         print('The result \"{0}({1})\" occured {2} times on a total of {3}'.format(list(counts_result.keys())[i], int(list(counts_result.keys())[i], 2), list(counts_result.values())[i],number_shots))
@@ -580,32 +454,27 @@ if __name__ == '__main__':
 
     start = time.time()
     """ Initialize this variable """
-    prob_success=0
+    prob_success_not_equiv=0
+    prob_success_equiv=0
     
     """ For each simulation result, print proper info to user and try to calculate the factors of N"""
-    if paralelo == 1:
-        i=0
-        with ProcessPoolExecutor() as executor:
-            futures = [executor.submit(process_result, i, counts_result, number_shots, N, a, analisis) for i in range(len(counts_result))]
-            for future in futures:
-                success, prob_this_result = future.result()
-                if success:
-                    prob_success += prob_this_result
-    else:
-        for i in range(len(counts_result)):
-            success, prob_this_result = process_result(i, counts_result, number_shots, N, a, analisis)
-            if success:
-                prob_success += prob_this_result
-            i=i+1
-
+    i=0
+    for i in range(len(counts_result)):
+        success_not_equiv, success_equiv, prob_this_result = process_result(i, counts_result, number_shots, N, a)
+        if success_not_equiv:
+                prob_success_not_equiv += prob_this_result
+        if success_equiv:
+            prob_success_equiv += prob_this_result
 
     end = time.time()
+    print('Result analysis completed. Time needed: %f\n\n\n'%(end - start))
+
     print("Time needed for circuit construction: %f seconds"%(tiempo_circuito))
     print("Time needed for circuit execution: %f seconds"%(tiempo_ejecucion))
     print("Time needed for result analysis: %f seconds"%(end-start))
-    print("\nUsing a={0}, found the factors of N={1} in {2:.4f} % of the cases\n".format(a,N,prob_success))
+    print("\nUsing a={0}, found the factors of N={1} in {2:.4f} % of the cases using only the period and in {3:.4f} % of the cases using also equivalent periods\n".format(a,N,prob_success_not_equiv, prob_success_equiv))
     #print('Tiempo necesitado para el análisis de resultados %f'%(end - start))
     #print("Tiempo de construcción del circuito: %f segundos"%(tiempo_circuito))
     #print("Tiempo de ejecución del circuito: %f segundos"%(tiempo_ejecucion))
     #print("Tiempo de análisis de resultados: %f segundos"%(end-start))
-    #print("\nUsing a={0}, found the factors of N={1} in {2:.4f} % of the cases\n".format(a,N,prob_success))
+    #print("\nUsing a={0}, found the factors of N={1} in {2:.4f} % of the cases using only the period and in {3:.4f} % of the cases using also equivalent periods\n".format(a,N,prob_success_not_equiv, prob_success_equiv))
